@@ -7,4 +7,6 @@ Les macros permettent de faire les opérations suivantes :
 
 
 
-Une fois exécuté, le code fera apparaître des messages d'erreur. Cela est normal et est dû au fait que certaines séries n'ont des données que pour uné période plus restreinte que 1990-2012.
+Une fois exécuté, le code fera apparaître des messages d'erreur. 
+Cela est normal et est dû au fait que certaines séries n'ont des données que pour uné période plus restreinte que 1990-2012.
+C'est la macro base_reg et les macros dont le nom commence par rmsfe qui sont respondable de ce faux problème
