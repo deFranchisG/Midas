@@ -1,0 +1,569 @@
+
+%macro regression_exp_2(var_1,var_2,var_3,a,var_4,var_5,b);
+DATA table ;
+SET table;
+IF &var_1.1=. THEN DELETE;
+IF taux=. THEN DELETE;
+RUN ;
+
+
+PROC NLIN data=table OUTEST=parametres method=newton maxiter=500; /* cac 40 :c=0.1 beta=-0.01 theta1=1 theta2=-0.01*/
+parameters c=0.1 
+
+
+beta&var_1=0.5817387481 theta1&var_1=0.0462998019 theta2&var_1=-0.00012202 /*-0.01 0.05 0.0005*/ /*beta&var_1=-0.01 theta1&var_1=0.5 theta2&var_1=-0.002*/
+beta&var_2=0.0000833209 theta1&var_2=0.06 theta2&var_2=-0.000179968 /*beta -0.01 theta1=0.06*/
+beta&var_3=-0.00001 theta1&var_3=0.01 theta2&var_3=-0.0002  /*beta= 0.001 theta1=0.01 theta1=-0.0002*/
+
+  %do k=1 %to &b;
+		um&k = 0.0001
+	%end;
+%do k=1 %to &b;
+		deltaum&k =0.00001
+	%end;
+;
+
+MODEL taux = c /*+ um1*climat1+um2*climat2+ um3*climat3+um4*climat4+ um5*climat5+um6*climat6+*/
+/*première boucle correspondant à la variable mensuelle*/
+	%DO i=1 %TO &b;
+	+ um&i*&var_4&i + deltaum&i*&var_5&i
+	%END;
+ /*Seconde boucle correspondant à la variable hf*/
+
++ beta&var_1/(0 %do i=1 %to &a; 		
+		+ exp(theta1&var_1*&i+ theta2&var_1*&i**2) %end;)*
+(%do i=1 %to &a; 		
+		+ (exp(theta1&var_1*&i+ theta2&var_1*&i**2)*&var_1.&i ) 
+	%end;)
++ beta&var_2/(0 %do i=1 %to &a; 		
+		+ exp(theta1&var_2*&i+ theta2&var_2*&i**2) %end;)*
+(%do i=1 %to &a; 		
+		+ (exp(theta1&var_2*&i+ theta2&var_2*&i**2)*&var_2.&i ) 
+	%end;)
++ beta&var_3/(0 %do i=1 %to &a; 		
+		+ exp(theta1&var_3*&i+ theta2&var_3*&i**2) %end;)*
+(%do i=1 %to &a; 		
+		+ (exp(theta1&var_3*&i+ theta2&var_3*&i**2)*&var_3.&i ) 
+	%end;)
+	;
+RUN;
+%mend;
+
+
+%macro rmsfe_umidas_polynomial_2(var_1,taux_1,var_2,taux_2,var_3,taux_3,a,t,var_4,taux_4,b,for);
+
+DATA res.prevision;
+    DELETE ;
+run;
+
+
+
+%chargeur_1
+
+data donnees;
+SET donnees;
+climat2=climat;
+run;
+
+
+
+%PUT module mf ;
+%module(&b,&var_4,&taux_4,&for);
+
+%PUT module hf ;
+%module(&a,&var_1,&taux_1,&for);
+
+%PUT module hf ;
+%module(&a,&var_2,&taux_2,&for);
+
+%PUT module hf ;
+%module(&a,&var_3,&taux_3,&for);
+
+%PUT ajout hf ;
+%ajout_polynomial(&a,&t,&var_1,&for)
+
+%PUT ajout hf ;
+%ajout_polynomial(&a,&t,&var_2,&for)
+
+%PUT ajout hf ;
+%ajout_polynomial(&a,&t,&var_3,&for)
+
+%DO annee=2000 %TO 2012;
+%DO trimestre=1 %TO 4;
+
+%PUT dates table ;
+DATA table;
+SET bibli.table;
+WHERE date<=yyq(&annee,&trimestre);
+RUN;
+
+%PUT regression  ;
+PROC REG DATA=table OUTEST=parametres ;
+MODEL taux=&var_1.1-&var_1.%EVAL(&t+1) &var_2.1-&var_2.%EVAL(&t+1) &var_3.1-&var_3.%EVAL(&t+1) &var_4.1-&var_4.&b ;
+OUTPUT out=fit
+	p=yhat ;
+RUN;
+QUIT;
+
+
+
+
+%PUT calcul coefficients;
+%calcul_coefficients_polynomial(&var_1,&t,&a,0);
+
+%PUT calcul coefficients;
+%calcul_coefficients_polynomial(&var_2,&t,&a,0);
+
+%PUT calcul coefficients;
+%calcul_coefficients_polynomial(&var_3,&t,&a,0);
+
+%PUT calcul prevision;
+%prevision_polynomial_2(&var_1,&var_2,&var_3,&a,&t,&var_4,&b,&for,&annee,&trimestre);
+
+
+DATA res.prevision ;
+SET res.prevision prevision_prov;
+RUN;
+
+
+%PUT itération &annee Q &trimestre/4 ;
+
+%END;
+%END;
+
+
+DATA res.prevision ;
+SET res.prevision ;
+KEEP col1 date ;
+IF col1=. THEN DELETE ; 
+RUN;
+
+
+
+%LET nom=polynomial_4_variables;
+%LET titre="Réalité vs prevision, midas polynomial (change, cac 40 spread tmp-pibor, climat des affaires, delta climat des affaires)";
+
+%grapheur
+
+
+%mend;
+
+
+
+
+
+
+
+
+
+%macro almon_exp_2(var_1,a1,taux_1,var_2,a2,taux_2,var_3,a3,taux_3,var_4,a4,taux_4,var_5,a5,taux_5,for,annee,trim);
+
+
+/*a : nombre de retards de la variable haute fréquence retenus*/
+
+/*b : nombre de retards de la variable moyenne fréquence retenus*/
+
+/*var_1 : nom de la variable haute fréquence*/
+/*taux_1 : s'il faut calculer un taux pour var_1 mettre 1 ; 0 sinon*/
+/*var_2 : nom de la variable haute fréquence*/
+/*taux_2 : s'il faut calculer un taux pour var_2 mettre 1 ; 0 sinon*/
+/*for : horizon de prévision : si for =1 on se situe à la fin du mois2 pour prévoir le mois3. */
+/*annee : année de la dernière valeur d'estimation souhaitée*/
+/*trim : trimestre de la dernière valeur d'estimation souhaitée*/
+
+
+
+/*Je charge les donnees*/
+%chargeur_1
+
+data donnees;
+SET donnees;
+climat2=climat;
+run;
+
+
+/*préparation des données haute fréquence et ajout de celles-ci à la table*/
+%PUT module hf &2 ;
+%module(&a1,&var_1,&taux_1,&for);
+
+%PUT module hf &2 ;
+%module(&a2,&var_2,&taux_2,&for);
+
+%PUT module hf &3 ;
+%module(&a3,&var_3,&taux_3,&for);
+
+/*préparation des données haute fréquence et ajout de celles-ci à la table*/
+%PUT module mf &i ;
+%module(&a4,&var_4,&taux_4,&for);
+
+%PUT module mf &i ;
+%module(&a5,&var_5,&taux_5,&for);
+
+
+
+
+/*Elimination des lignes correspondant à une date posétieure à celle choisie*/
+%PUT dates table ;
+DATA table;
+SET table;
+WHERE date<yyq(&annee,&trim);
+RUN;
+
+
+%regression_exp_2(&var_1,&var_2,&var_3,&a,&var_4,&var_5,&b)
+%calcul_coefficients_exponentiel(&var_1,&a,1)
+%calcul_coefficients_exponentiel(&var_2,&a,1)
+%calcul_coefficients_exponentiel(&var_3,&a,1)
+
+
+
+
+%MEND;
+
+
+
+
+
+
+
+%macro prevision_polynomial_2(var_1,var_2,var_3,a,t,var_4,b,for,annee,trimestre);
+
+/*je rassemble dans une même table les coefficients estimés et ceux reconstitués. */
+
+/*de la table parametres fournie par la proc reg, je ne garde que les estimations correspondant à la variable mensuelle*/
+DATA coefficients;
+SET parametres;
+DROP _MODEL_ _DEPVAR_ _TYPE_ _RMSE_ taux &var_1.1-&var_1.%EVAL(&t+1) &var_2.1-&var_2.%EVAL(&t+1) &var_3.1-&var_3.%EVAL(&t+1);
+RUN;
+
+
+
+
+/*je rassemble tous les coefficients dans la table coefficients*/
+DATA coefficients;
+MERGE coefficients coefficients_hf&var_1 ;
+RUN;
+
+DATA coefficients;
+MERGE coefficients coefficients_hf&var_2 ;
+RUN;
+
+DATA coefficients;
+MERGE coefficients coefficients_hf&var_3 ;
+RUN;
+
+
+/*j'isole maintenant la valeur des regresseurs correposndant à la date immédiatement successive à celle de la fin de lapériode d'estimation*/
+/*J'isole aussi la date de prévision, pour ensuite l'accoler à la valeur prévue*/
+/*Si on est au trimestre 1,2,3, il suffit de prendre la valeur correspondant au trimestre suivant*/
+%IF &trimestre<4 %THEN %DO ;
+DATA valeurs;
+SET bibli.table_2;
+DROP date taux date_obs;
+WHERE date=yyq(&annee,%EVAL(&trimestre+1));
+RUN;
+
+DATA date ;
+SET bibli.table ;
+KEEP date ;
+WHERE date=yyq(&annee,%EVAL(&trimestre+1));
+RUN ;
+%END;
+
+/*si on est au trimestre 4, il faut prendre la valeur du premier trimestre de l'année suivante*/
+%IF &trimestre=4 %THEN %DO ;
+DATA valeurs;
+SET bibli.table_2;
+DROP date taux date_obs ;
+WHERE date=yyq(%EVAL(&annee+1),1);
+RUN;
+
+DATA date ;
+SET bibli.table ;
+KEEP date ;
+WHERE date=yyq(%EVAL(&annee+1),1);
+RUN ;
+%END;
+
+/*je retire la valeur correspondant au premier retard du pib*/
+
+DATA valeurs ;
+SET valeurs;
+DROP ret1;
+RUN;
+
+%transpose(valeurs);
+
+%produit_matriciel(coefficients,valeurs);
+
+/*le résultat de ce produit matriciel se trouve dans une table nommée produit (cf macro produit_matriciel)*/
+
+/*j'exporte la prévision dans la table prévision_prov*/
+DATA prevision_prov;
+SET produit ;
+RUN ;
+
+
+/*j'ajoute la date à prevision_prov*/
+DATA prevision_prov ;
+MERGE prevision_prov date;
+RUN;
+%mend;
+
+
+
+
+
+
+%macro prevision_exponentiel_2(var_1,var_2,var_3,a,var_4,var_5,for,annee,trimestre);
+/*je récupère les coefficients des variables mensuelles*/
+
+DATA bibli.table_2 ;
+SET bibli.table_2;
+DROP tmp_pibor;
+RUN;
+
+
+
+PROC SQL ;
+select distinct max(_ITER_) into :ligne_max from parametres;
+QUIT;
+
+%PUT &ligne_max;
+
+/*de la table parametres fournie par la proc reg, je ne garde que les estimations correspondant aux variables mensuelles*/
+DATA coefficients;
+SET parametres;
+DROP _TYPE_ _STATUS_ _NAME_ _ITER_ _SSE_ c beta&var_1 theta1&var_1 theta2&var_1 beta&var_2 theta1&var_2 theta2&var_2 beta&var_3 theta1&var_3 theta2&var_3;
+WHERE _iter_ =&ligne_max ;
+RUN;
+
+/*j'isole la constante*/
+DATA constante;
+SET parametres;
+KEEP c ;
+WHERE _iter_ =&ligne_max ;
+RUN;
+
+
+DATA coefficients_hf&var_3;
+SET coefficients_hf&var_3;
+DROP num;
+RUN;
+
+DATA coefficients_hf&var_2;
+SET coefficients_hf&var_2;
+DROP num;
+RUN;
+
+
+DATA coefficients_hf&var_1;
+SET coefficients_hf&var_1;
+DROP num;
+RUN;
+
+%transpose(coefficients_hf&var_3)
+DATA coefficients_hf&var_3;
+SET coefficients_hf&var_3;
+%DO i=1 %TO &a;
+RENAME col&i=&var_3.&i;
+%END;
+RUN;
+
+%transpose(coefficients_hf&var_2)
+DATA coefficients_hf&var_2;
+SET coefficients_hf&var_2;
+%DO i=1 %TO &a;
+RENAME col&i=&var_2.&i;
+%END;
+RUN;
+
+%transpose(coefficients_hf&var_1)
+DATA coefficients_hf&var_1;
+SET coefficients_hf&var_1;
+%DO i=1 %TO &a;
+RENAME col&i=&var_1.&i;
+%END;
+RUN;
+
+
+
+/*je rassemble tous les coefficients dans la table coefficients
+Cette table comportera, dans l'ordre : la cosntante, les coefficients reconstitués correspondant à la première variable finanière
+puis ceux de la seconde, puis les coefficients des variables mensuelles*/
+
+DATA coefficients;
+MERGE coefficients_hf&var_3 coefficients  ;
+RUN;
+
+DATA coefficients;
+MERGE coefficients_hf&var_2 coefficients  ;
+RUN;
+
+DATA coefficients;
+MERGE coefficients_hf&var_1 coefficients  ;
+RUN;
+
+DATA coefficients;
+MERGE constante coefficients  ;
+RUN;
+
+
+/*j'isole maintenant la valeur des regresseurs correposndant à la date immédiatement successive à celle de la fin de lapériode d'estimation*/
+/*J'isole aussi la date de prévision, pour ensuite l'accoler à la valeur prévue*/
+/*Si on est au trimestre 1,2,3, il suffit de prendre la valeur correspondant au trimestre suivant*/
+%IF &trimestre<4 %THEN %DO ;
+DATA valeurs;
+SET bibli.table_2;
+DROP date taux date_obs;
+WHERE date=yyq(&annee,%EVAL(&trimestre+1));
+RUN;
+
+DATA date ;
+SET bibli.table ;
+KEEP date ;
+WHERE date=yyq(&annee,%EVAL(&trimestre+1));
+RUN ;
+%END;
+
+/*si on est au trimestre 4, il faut prendre la valeur du premier trimestre de l'année suivante*/
+%IF &trimestre=4 %THEN %DO ;
+DATA valeurs;
+SET bibli.table_2;
+DROP date taux date_obs ;
+WHERE date=yyq(%EVAL(&annee+1),1);
+RUN;
+
+DATA date ;
+SET bibli.table ;
+KEEP date ;
+WHERE date=yyq(%EVAL(&annee+1),1);
+RUN ;
+%END;
+
+/*je retire la valeur correspondant au premier retard du pib*/
+DATA valeurs ;
+SET valeurs;
+DROP ret1;
+RUN;
+
+%transpose(valeurs);
+
+%produit_matriciel(coefficients,valeurs);
+
+/*le résultat de ce produit matriciel se trouve dans une table nommée produit (cf macro produit_matriciel)*/
+
+/*j'exporte la prévision dans la table prévision_prov*/
+DATA prevision_prov;
+SET produit ;
+RUN ;
+
+
+/*j'ajoute la date à prevision_prov*/
+DATA prevision_prov ;
+MERGE prevision_prov date;
+RUN;
+%mend;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+%macro rmsfe_umidas_exp_2(var_1,taux_1,var_2,taux_2,var_3,taux_3,a,var_4,taux_4,var_5,taux_5,b,for);
+
+DATA res.prevision;
+    DELETE ;
+run;
+
+
+/*Je charge les donnees*/
+%chargeur_1
+
+data donnees;
+SET donnees;
+climat2=0;
+run;
+
+
+/*préparation des données haute fréquence et ajout de celles-ci à la table*/
+%PUT module hf &2 ;
+%module(&a,&var_1,&taux_1,&for);
+
+%PUT module hf &2 ;
+%module(&a,&var_2,&taux_2,&for);
+
+%PUT module hf &3 ;
+%module(&a,&var_3,&taux_3,&for);
+
+/*préparation des données haute fréquence et ajout de celles-ci à la table*/
+%PUT module mf &i ;
+%module(&b,&var_4,&taux_4,&for);
+
+%PUT module mf &i ;
+%module(&b,&var_5,&taux_5,&for);
+
+
+%DO annee=2004 %TO 2012;
+%DO trimestre=1 %TO 4;
+
+/*Elimination des lignes correspondant à une date posétieure à celle choisie*/
+%PUT dates table ;
+DATA table;
+SET bibli.table_2;
+WHERE date<yyq(&annee,&trimestre);
+RUN;
+
+DATA table;
+SET table;
+IF cac_401=. THEN DELETE;
+RUN;
+
+
+
+
+%regression_exp_2(&var_1,&var_2,&var_3,&a,&var_4,&var_5,&b)
+%calcul_coefficients_exponentiel(&var_1,&a,1)
+%calcul_coefficients_exponentiel(&var_2,&a,1)
+%calcul_coefficients_exponentiel(&var_3,&a,1)
+
+
+
+%PUT calcul prevision;
+%prevision_exponentiel_2(&var_1,&var_2,&var_3,&a,&var_4,&var_5,2,&annee,&trimestre,0)
+
+DATA res.prevision ;
+SET res.prevision prevision_prov;
+RUN;
+
+
+%PUT itération &annee Q &trimestre/4;
+
+%END;
+%END;
+
+
+DATA res.prevision ;
+SET res.prevision ;
+KEEP col1 date ;
+IF col1=. THEN DELETE ;
+RUN;
+
+%LET nom=exponentiel_5_variables;
+%LET titre="Réalité vs prevision, midas exponentiel (change, cac 40 spread tmp-pibor, climat des affaires, delta climat des affaires)";
+
+
+%grapheur
+
+
+%mend;
