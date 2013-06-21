@@ -1,4 +1,8 @@
 
+
+/*Une fois exécuté, le code fera apparaître des messages d'erreur. 
+Cela est normal et est dû au fait que certaines séries n'ont des données que pour uné période plus restreinte que 1990-2012.*/
+
 %almon_polynomial(cac_40,350,4,1,climat,8,0,2,2012,4);
 /*cac_40 : nom de la variable de la base "donnees" qui est utilisée de façon contrainte*/
 /*350 : nombre de retards du cac_40 pris en compte*/
