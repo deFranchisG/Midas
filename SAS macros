@@ -1,12 +1,12 @@
-/*
-libname sacre "\\paradis\eleves\GDe.Franchis\Bureau\3A\GT\donnees\sacre";
-libname bibli "\\paradis\eleves\GDe.Franchis\Bureau\3A\GT\donnees\bibli";
-libname res "\\paradis\eleves\GDe.Franchis\Bureau\3A\GT\donnees\resultats";
-*/
 
-libname sacre "C:\Users\frerots\Dropbox\Etudes\ENSAE\Kappa\GT\donnees\sacre";
-libname bibli "C:\Users\frerots\Dropbox\Etudes\ENSAE\Kappa\GT\donnees\bibli";
-libname res "C:\Users\frerots\Dropbox\Etudes\ENSAE\Kappa\GT\sorties"; 
+%LET sacre=(chemin du répertoir où sont entreposées les données brutes (au format xls);
+%LET destination=(chemin du répertoir où l'on souhgaite entreposer les sorties (graphiques tableaux...));
+%LET bibli=(chemin du répertoir où est entreposée la base de données nommée "donnees");
+
+libname sacre "&sacre";
+libname bibli "&bibli";
+libname res "&destination"; 
+
 OPTIONS nonotes nosource nosource2 errors=0 ;
 
 
@@ -77,6 +77,8 @@ RUN;
 
 
 %macro chargeur_1;
+/*macro qui se contente de charger les données situées dans bibli dans le répertoir work. */
+
 PROC DATASETS library=work kill;
 RUN;
 QUIT;
@@ -98,22 +100,25 @@ RUN;
 
 %macro base_reg(var,a,for);
 
+/*macro fondamentale pour le reste du code.
+/*cette macro prépare les données en vue de la régression MIDAS. 
+/*en entrée il faut lui fournir une variable (var) 
+/*en sortie la macro fournit un tableau avec "a" colonnes.
+/*chaque ligne correspond alors à un trimestre.
+les valeurs successives présentes sur une ligne correspondent, de la gauche vers la droite, à la valeur de la variable pour le dernier jour, puis l'avant dernier jour... jusqu'au a-ème jour du trimestre en questio
+La ième colonne correspond alors au ième jour de chaque trimestre
+
+/*var : nom de la variable choisie
+/*a nombre de jours (ou de mois pour les variables mensuelles) choisis pour la regression MIDAS
+/*for : nombre de mois séparant la fin de la période d'estimation de la fin du trimestre.
+for = 1 signifie qu'on prévoit le mois 3 à la fin du mois 2.
+
 /*Je crée un masque de base destiné à accueillir la base finale, traitée*/
 DATA &var.freq;
     DELETE ;
 run;
 
-/*
 
-DATA prov ;
-SET &var (firstobs=%EVAL(&a+1) obs=%EVAL(&a+1));
-RUN;
-
-PROC SQL ;
-select distinct min(year(date)) into :annee from prov;
-QUIT;
-
-*/
 %DO annee=1990 %TO 2013;
 %PUT année &annee ;
 %DO trimestre =1 %TO 4;
@@ -186,7 +191,6 @@ RUN;
 
 
 
-
 DATA &var.freq ;
 SET &var.freq  &var.&trimestre;
 RUN;
@@ -194,7 +198,7 @@ RUN;
 
 %END ;
 
-%PUT renomme les colonnes ;
+*renomme les colonnes ;
 DATA &var.freq ;
 SET &var.freq ;
 %DO i=1 %TO &a ;
@@ -215,10 +219,11 @@ RUN;
 
 
 
+%macro mat(n,p)  ;
+
 /*Macro qui permet de créer une matrice avec n lignes et p colonnes, dont la ième ligne est constituée des puissances successives de i.
 n doit être égal au nombre de retards de la variable à regrésser.
 p est le nombre de paramètres almons que je souhaite estimer*/
-%macro mat(n,p)  ;
 data matrice;
 v0=0;
 RUN;
@@ -270,9 +275,10 @@ run;
 
 
 
+
+%macro produit_matriciel(A,B) ;
 /*macro qui permet de faire un produit matriciel
 J'utilise pour cela du code SAS IML*/
-%macro produit_matriciel(A,B) ;
  PROC IML ;
  RESET PRINT;
  USE &A ;
@@ -328,6 +334,9 @@ RUN;
 
 
 %macro test_cusum;
+/*Macro qui permet de récupérer et de traiter les résidus d'une estimation MIDAS en vue de calculer le test CUSUM*/
+/*Le calcul effectif du test CUSUM se fait grâce à la macro test_cusum_2*/
+
 
 /*je compte le nombre de lignes présentes dans la base sur laquelle je regresse*/
 
@@ -431,7 +440,8 @@ RUN;
 /*a : nombre de retards de la variable haute fréquence retenus*/
 /*freq : fréquence de la variable haute fréquence (3 pour une variable mensuelle, 63 pour une variable journalière*/
 /*var : nom de la variable choisie. Elle eput être haute fréquence (journalière) ou moyenne fréquence (mensuelle). il suffit juste de le préciser via le paramètre freq.
-/*for : horizon de prévision : si for =1 on se situe à la fin du mois2 pour prévoir le mois3. 
+/*for : nombre de mois séparant la fin de la période d'estimation de la fin du trimestre.
+for = 1 signifie qu'on prévoit le mois 3 à la fin du mois 2.
 /*si for = 2 on se situe à la fin du mois 1 pour prévoir le mois 3*/
 
 /*Cette macro est utilisée dans le cadre d'un modèle polynomial, comme dans le cadre d'un modèle exponentiel*/
@@ -483,6 +493,14 @@ RUN;
 
 
 %macro calcul_coefficients_polynomial(var,t,a,graph);
+
+/*macro qui calcule la courbe des coefficients d'un modèle MIDAS contraint par un polynôme de degré t*/
+
+
+/*var : variable qui subit la contrainte
+/*t : degré du polynôme de contraintes*/
+/*a : nombre de jours de retards*/
+
 /*les ocefficients estimés sont conservés dans la table parametres*/
 /*js'isolèe les valeurs qui m'intéresssent dans la table parametres*/
 DATA parametres_2 ;
@@ -522,8 +540,9 @@ SET coefficients_hf&var;
 num=_n_;
 RUN;
 
-ODS RTF FILE="C:\Users\frerots\Dropbox\Etudes\ENSAE\Kappa\GT\sorties\&var&t.parametres_horizon&for&a.retards.rtf";
-/*ODS RTF FILE="\\paradis\eleves\GDe.Franchis\Bureau\3A\GT\donnees\resultats\&var&t.parametres_horizon&for&a.retards.rtf";*/
+/*exportation du graphique*/
+ODS RTF FILE="&destination\&var&t.parametres_horizon&for&a.retards.rtf";
+
 TITLE "Coefficients almon polynomiaux, &t parametres, horizon &for, &var avec &a retards";
 PROC GPLOT data=coefficients_hf&var ;
 PLOT col1*num;
@@ -545,9 +564,8 @@ ODS RTF CLOSE ;
 /*freq : fréquence de la variable haute fréquence (3 pour une variable mensuelle, 63 pour une variable journalière*/
 /*t : degré du polynôme  almon choisi*/
 /*var : nom de la variable choisie. Elle eput être haute fréquence (journalière) ou moyenne fréquence (mensuelle). il suffit juste de le préciser via le paramètre freq.
-/*for : horizon de prévision : si for =1 on se situe à la fin du mois2 pour prévoir le mois3. 
-/* si for = 2 on se situe à la fin du mois 1 pour prévoir le mois 3*/
-
+/*for : nombre de mois séparant la fin de la période d'estimation de la fin du trimestre.
+for = 1 signifie qu'on prévoit le mois 3 à la fin du mois 2.
 
 /*j'isole les colonnes de la base &var.freq qui m'intéressent, ie celles avec les valeurs de la variable*/
 DATA A ;
@@ -617,18 +635,28 @@ RUN;
 
 
 
-%macro prevision_polynomial(a,t,b,var_1,var_2,for,mickey,donald,adl);
+%macro prevision_polynomial(var_1,a,t,var_2,b,for,annee,trimestre);
+/*macro qui calcule la valeur prévue du PIB à partir de l'estimation d'un modèle MIDAS polynomial polynomial de degré "t" pour var_1 non contraint pour var_2*/
+
+/*var_1 : nom de la variable haute fréquence*/
+/*a : nombre de retards de la variable haute fréquence retenus*/
+/*t : degré du polynnôme de contraintes pour la variable haute fréquence
+/*taux_1 : s'il faut calculer les différences premières pour var_1 mettre 1 ; 0 sinon*/
+/*var_2 : nom de la variable moyenne fréquence*/
+/*b : nombre de retards de la variable moyenne fréquence retenus*/
+/*taux_2 : s'il faut calculer les différences premières pour var_2 mettre 1 ; 0 sinon*/
+/*for : nombre de mois séparant la fin de la période d'estimation de la fin du trimestre.
+for = 1 signifie qu'on prévoit le mois 3 à la fin du mois 2.
+/*annee : année de la dernière valeur d'estimation souhaitée*/
 
 /*je rassemble dans une même table les coefficients estimés et ceux reconstitués. */
 
 /*de la table parametres fournie par la proc reg, je ne garde que les estimations correspondant à la variable mensuelle*/
+
 DATA coefficients;
 SET parametres;
 DROP _MODEL_ _DEPVAR_ _TYPE_ _RMSE_ taux &var_1.1-&var_1.%EVAL(&t+1) ;
 RUN;
-
-
-
 
 /*je rassemble tous les coefficients dans la table coefficients*/
 DATA coefficients;
@@ -639,42 +667,44 @@ RUN;
 /*j'isole maintenant la valeur des regresseurs correposndant à la date immédiatement successive à celle de la fin de lapériode d'estimation*/
 /*J'isole aussi la date de prévision, pour ensuite l'accoler à la valeur prévue*/
 /*Si on est au trimestre 1,2,3, il suffit de prendre la valeur correspondant au trimestre suivant*/
-%IF &donald<4 %THEN %DO ;
+%IF &trimestre<4 %THEN %DO ;
 DATA valeurs;
 SET bibli.table_2;
 DROP date taux date_obs;
-WHERE date=yyq(&mickey,%EVAL(&donald+1));
+WHERE date=yyq(&annee,%EVAL(&trimestre+1));
 RUN;
 
+/*j'extrais ici la date correspondant au trimestre étudié en ce moment*/
 DATA date ;
 SET bibli.table ;
 KEEP date ;
-WHERE date=yyq(&mickey,%EVAL(&donald+1));
+WHERE date=yyq(&annee,%EVAL(&trimestre+1));
 RUN ;
 %END;
 
 /*si on est au trimestre 4, il faut prendre la valeur du premier trimestre de l'année suivante*/
-%IF &donald=4 %THEN %DO ;
+%IF &trimestre=4 %THEN %DO ;
 DATA valeurs;
 SET bibli.table_2;
 DROP date taux date_obs ;
-WHERE date=yyq(%EVAL(&mickey+1),1);
+WHERE date=yyq(%EVAL(&annee+1),1);
 RUN;
 
+/*j'extrais ici la date correspondant au trimestre étudié en ce moment*/
 DATA date ;
 SET bibli.table ;
 KEEP date ;
-WHERE date=yyq(%EVAL(&mickey+1),1);
+WHERE date=yyq(%EVAL(&annee+1),1);
 RUN ;
 %END;
 
-/*je retire la valeur correspondant au premier retard du pib, dans le cas où adl vaut 0*/
-%IF &adl=0 %THEN %DO ;
+/*je retire la valeur correspondant au premier retard du pib*/
+
 DATA valeurs ;
 SET valeurs;
 DROP ret1;
 RUN;
-%END;
+
 %transpose(valeurs);
 
 %produit_matriciel(coefficients,valeurs);
@@ -686,7 +716,6 @@ DATA prevision_prov;
 SET produit ;
 RUN ;
 
-
 /*j'ajoute la date à prevision_prov*/
 DATA prevision_prov ;
 MERGE prevision_prov date;
@@ -694,18 +723,16 @@ RUN;
 %mend;
 
 
-%macro almon_polynomial(var_1,a,t,taux_1,var_2,b,taux_2,for,adl,annee,trim);
-/*a : nombre de retards de la variable haute fréquence retenus*/
-/*g : fréquence de la variable haute fréquence (63 pour une variable journalière)*/
-/*t : degré du polynnôme almon -1. (pour un polynôme de degré4, mettre t=3)*/
-/*b : nombre de retards de la variable moyenne fréquence retenus*/
-/*h : fréquence de la variable moyenne fréquence (3 pour une variable mensuelle)*/
+%macro almon_polynomial(var_1,a,t,taux_1,var_2,b,taux_2,for,annee,trim);
+/*macro qui estime un modèle MIDAS avec deux variable : l'une sans contrainte (var_2) et l'autre avec une contrainte polynomiale (var_1)
 /*var_1 : nom de la variable haute fréquence*/
-/*taux_1 : s'il faut calculer un taux pour var_1 mettre 1 ; 0 sinon*/
-/*var_2 : nom de la variable haute fréquence*/
-/*taux_2 : s'il faut calculer un taux pour var_2 mettre 1 ; 0 sinon*/
-/*for : horizon de prévision : si for =1 on se situe à la fin du mois2 pour prévoir le mois3. */
-/*adl : vaut 1 si on veut inclure un retard du PIB dans le rgeression. 0 sinon */
+/*a : nombre de retards de la variable haute fréquence retenus*/
+/*t : degré du polynnôme de contraintes
+/*taux_1 : s'il faut calculer les différences premières pour var_1 mettre 1 ; 0 sinon*/
+/*var_2 : nom de la variable moyenne fréquence*/
+/*b : nombre de retards de la variable moyenne fréquence retenus*/
+/*taux_2 : s'il faut calculer les différences premières pour var_2 mettre 1 ; 0 sinon*/
+/*for : horizon de prévision : si for =1 on se situe à la fin du mois 2 pour prévoir le mois3. Si for =2, on se situe à la fin du mois 1*/
 /*annee : année de la dernière valeur d'estimation souhaitée*/
 /*trim : trimestre de la dernière valeur d'estimation souhaitée*/
 %chargeur_1
@@ -737,7 +764,7 @@ RUN;
 /*regression*/
 %PUT regression  ;
 /*Si adl vaut 0 cela signifie qu'un retard du PIB n'est pas bienvenu*/
-%IF &adl=0 %THEN %DO ;
+
 PROC REG DATA=table OUTEST=parametres ;
 MODEL taux= &var_1.1-&var_1.%EVAL(&t+1) &var_2.1-&var_2.&b  ;
 OUTPUT out=fit
@@ -745,17 +772,7 @@ OUTPUT out=fit
 	r=yresid;
 RUN;
 QUIT;
-%END ;
 
-/*Si adl vaut autre chose que 0 (1) cela signifie qu'un retard du PIB est demandé dans l'estimation du modèle*/
-%ELSE %DO ;
-PROC REG DATA=table OUTEST=parametres ;
-MODEL taux=ret1 &var_1.1-&var_1.%EVAL(&t+1) &var_2.1-&var_2.&b  ;
-OUTPUT out=fit
-	p=yhat ;
-RUN;
-QUIT;
-%END ;
 
 
 
@@ -765,40 +782,54 @@ QUIT;
 %mend;
 
 
-%macro rmsfe_umidas_polynomial(var_1,a,t,taux_1,var_2,b,taux_2,for,adl,cusum);
+%macro rmsfe_umidas_polynomial(var_1,a,t,taux_1,var_2,b,taux_2,for,cusum);
+/*macro qui calcule le RMSFE d'un modèle MIDAS à deux variables, l'une non contrainte (var_2), et l'autre contrainte par une polynôme (var_1)
+/*var_1 : nom de la variable haute fréquence*/
+/*a : nombre de retards de la variable haute fréquence retenus*/
+/*t : degré du polynnôme de contraintes
+/*taux_1 : s'il faut calculer les différences premières pour var_1 mettre 1 ; 0 sinon*/
+/*var_2 : nom de la variable moyenne fréquence*/
+/*b : nombre de retards de la variable moyenne fréquence retenus*/
+/*taux_2 : s'il faut calculer les différences premières pour var_2 mettre 1 ; 0 sinon*/
+/*for : horizon de prévision : si for =1 on se situe à la fin du mois 2 pour prévoir le mois3. Si for =2, on se situe à la fin du mois 1*/
+/*annee : année de la dernière valeur d'estimation souhaitée*/
+/*trim : trimestre de la dernière valeur d'estimation souhaitée*/
+/*cusum : pour calculer le test cusum, mettre 1. 0 sinon*/
 
+
+/*création d'un masque de base */
 DATA res.prevision;
     DELETE ;
 run;
 
-
-
-
+/*chargement des données*/
 %chargeur_1
 
-
+/*creation d'un masque de base destinée à contenir les résidus, en vue du calcul du test cusum*/
 DATA residus;
 DELETE ;
 RUN;
 
+
+/*préparation de la variable moyenne fréquence en vu e de la régression MIDAS*/
 %PUT module mf ;
 %module(&b,&var_2,&taux_2,&for);
 
-
+/*préparation de la variable haute fréquence en vue de la régression MIDAS*/
 %PUT module hf ;
 %module(&a,&var_1,&taux_1,&for);
 
 %PUT ajout hf ;
 %ajout_polynomial(&a,&t,&var_1,&for)
 
-
-%DO mickey=2000 %TO 2012;
-%DO donald=1 %TO 4;
+/*lancement de la boucle qui estime autant de midas qu'il y a de trimestres entre 2000 et 2012*/
+%DO annee=2000 %TO 2012;
+%DO trimestre=1 %TO 4;
 
 %PUT dates table ;
 DATA table;
 SET bibli.table;
-WHERE date<=yyq(&mickey,&donald);
+WHERE date<=yyq(&annee,&trimestre);
 RUN;
 
 %PUT regression  ;
@@ -812,13 +843,13 @@ QUIT;
 
 
 
-%PUT calcul coefficients;
+/*calcul des coefficients*/
 %calcul_coefficients_polynomial(&var_1,&t,&a,0);
 
-%PUT calcul prevision;
-%prevision_polynomial(&a,&t,&b,&var_1,&var_2,&for,&mickey,&donald,&adl);
+/*calcul de la prevision*/
+%prevision_polynomial(&var_1,&a,&t,&var_2,&b,&for,&annee,&trimestre);
 
-
+/*je range chaque prévision dans la base res.prevision*/
 DATA res.prevision ;
 SET res.prevision prevision_prov;
 RUN;
@@ -827,22 +858,23 @@ RUN;
 %test_cusum;
 %END;
 
-%PUT itération &mickey Q &donald/4 &var_1;
+/*petite ligne pour savoir où on en est dans la log*/
+%PUT itération &annee Q &trimestre/4 &var_1;
 
 %END;
 %END;
 
-
+/*nettoyage de la table res.prevision*/
 DATA res.prevision ;
 SET res.prevision ;
 KEEP col1 date ;
 IF col1=. THEN DELETE ;
 RUN;
 
-
+/*graphe de la prevision vs realité*/
+/*choix du titre et du nom du fichier où le graphe sera stocké correspondant au modèle*/
 %LET nom=polynomial&var_1.&a.jours&t. ;
 %LET titre="Réalité vs prevision au mois 1, Midas polynomial de degré &t., &var_1 sur &a jours";
-
 
 %grapheur
 
@@ -893,10 +925,7 @@ DATA selection ;
 RMSFE=&RMSFE;
 RUN;
 
-
-
-/*ODS RTF FILE="\\paradis\eleves\GDe.Franchis\Bureau\3A\GT\donnees\resultats\rmsfe&var_1&t.parametres_horizon&for.&a.retards.rtf";*/
-ODS RTF FILE="C:\Users\frerots\Dropbox\Etudes\ENSAE\Kappa\GT\sorties\&nom.rmsfe.rtf";
+ODS RTF FILE="&destination\&nom.rmsfe.rtf";
 TITLE &titre;
 TITLE2 "RMSFE=&RMSFE";
 PROC GPLOT data=graph ;
@@ -913,35 +942,18 @@ ODS RTF CLOSE ;
 
 
 
-%macro ajout_exp(a);
-/*Dans le cadre de la regression de type exponentiel almon, les coefficients ont la forme suivante : exp(a*i+b*i^2)*/
-/*Cette boucle ajoute a colonnes à la table, dont les ligne sde chacune sont toutes identitques égales à i, i variant de 1 à a*/
-/*On a ainsi une colonne avec que des 1, puis une avec que des 2...*/
-/*Ces colonnes seront utiles lors de l'estimation du modèle de regression (proc model)*/
-/*a : nombre de retards de la variable haute fréquence retenus*/
-%DO i=1 %TO &a;
-DATA table;
-SET table ;
-v&i=&i;
-RUN;
-%END;
-%mend;
-
-
-
 %macro almon_exp(var_1,a,t,taux_1,var_2,b,taux_2,for,annee,trim);
-/*a : nombre de retards de la variable haute fréquence retenus*/
-/*g : fréquence de la variable haute fréquence (63 pour une variable journalière)*/
-/*b : nombre de retards de la variable moyenne fréquence retenus*/
-/*h : fréquence de la variable moyenne fréquence (3 pour une variable mensuelle)*/
+/*macro qui estime un modèle MIDAS avec deux variable : l'une sans contrainte (var_2) et l'autre avec une contrainte exponentielle (var_1)
 /*var_1 : nom de la variable haute fréquence*/
-/*taux_1 : s'il faut calculer un taux pour var_1 mettre 1 ; 0 sinon*/
-/*var_2 : nom de la variable haute fréquence*/
-/*taux_2 : s'il faut calculer un taux pour var_2 mettre 1 ; 0 sinon*/
-/*for : horizon de prévision : si for =1 on se situe à la fin du mois2 pour prévoir le mois3. */
+/*a : nombre de retards de la variable haute fréquence retenus*/
+/*t : degré du polynnôme incorporé dans l'exponentielle
+/*taux_1 : s'il faut calculer les différences premières pour var_1 mettre 1 ; 0 sinon*/
+/*var_2 : nom de la variable moyenne fréquence*/
+/*b : nombre de retards de la variable moyenne fréquence retenus (en mois)*/
+/*taux_2 : s'il faut calculer les différences premières pour var_2 mettre 1 ; 0 sinon*/
+/*for : horizon de prévision : si for =1 on se situe à la fin du mois 2 pour prévoir le mois3. Si for =2, on se situe à la fin du mois 1*/
 /*annee : année de la dernière valeur d'estimation souhaitée*/
 /*trim : trimestre de la dernière valeur d'estimation souhaitée*/
-
 
 
 /*Je charge les donnees*/
@@ -963,15 +975,24 @@ WHERE date<yyq(&annee,&trim);
 RUN;
 
 
-
+/*estimation du modèle de regression*/
 %regression_exp(&var_1,&a,&t,&var_2,&b);
 
+/*reconstitution des coefficients correspondant à chaque jour de retard*/
 %calcul_coefficients_exponentiel(&var_1,&a,&t,1)
 
 
 %mend;
 
 %macro regression_exp(var_1,a,t,var_2,b);
+/*macro qui estime un modèle de regression MIDAS exponentiel pour var_1 et non contraint pour var_2*/
+/*var_1 : nom de la varibale haute fréquenc equi sera contrainte exponentiellement*/
+/*a : nombre de joruis de retard de var_1*/
+/*t : degré du polynôme de contraintes incorporé dans l'exponentielle*/
+/*var_2 : nom de la variable moyenne fréquence*/
+/*b : nombre de retards de la variable moyenne fréquence retenus(en mois)*/
+
+/*je supprime les ligne avec des valeurs manquantes, sinon la pronc nlin ne comprend pas */
 DATA table ;
 SET table;
 IF &var_1.1=. THEN DELETE;
@@ -979,32 +1000,29 @@ IF taux=. THEN DELETE;
 RUN ;
 
 
-PROC NLIN data=table OUTEST=parametres method=newton maxiter=500; /* cac 40 :c=0.1 beta=-0.01 theta1=1 theta2=-0.01*/
-parameters c=0.01 
-/*
-beta&var_1=0.5817387481 theta1&var_1=0.0462998019 theta2&var_1=-0.00012202 theta3&var_1=-0.00000001*/
-/* pour cac 40 dow jones et change
-beta&var_1=-0.001 theta1&var_1=0.1 theta2&var_1=-0.02
-beta&var_2=-0.001 theta1&var_2=0.1 theta2&var_2=-0.02
-beta&var_3=-0.001 theta1&var_3=0.1 theta2&var_3=-0.02*/
 
+PROC NLIN data=table OUTEST=parametres method=newton maxiter=500; 
+
+/*je propose une valeur initiale pour les parametres à estimer*/
+parameters 
+/*la constante*/
+c=0.01 
+/*le facteur devant le bloc exponentile*/
 beta&var_1=0
 
+/*les coefficients à l'intérieur de l'exponentielle*/
 %DO k=1 %TO &t ;
 theta&k&var_1=0
 %END;
 
- /*-0.01 0.05 0.0005 beta&var_1=-0.01 theta1&var_1=0.5 theta2&var_1=-0.002*/
-/*
-theta1&var_1=0.5 theta2&var_1=-0.001  theta3&var_1=-0.000001
-*/
-	%do k=1 %to &b;
+/*les coefficients correspondant aux b retards de var_2*/
+	%DO k=1 %TO &b;
 		um&k = 0.0001 
-	%end;
+	%END;
 
 ;
 
-MODEL taux = c /*+ um1*climat1+um2*climat2+ um3*climat3+um4*climat4+ um5*climat5+um6*climat6+*/
+MODEL taux = c 
 /*première boucle correspondant à la variable mensuelle*/
 	%DO i=1 %TO &b;
 	+ um&i*&var_2&i 
@@ -1018,78 +1036,24 @@ MODEL taux = c /*+ um1*climat1+um2*climat2+ um3*climat3+um4*climat4+ um5*climat5
 		+ (exp(0 %DO k=1 %TO &t ;+ theta&k&var_1*&i**&k %END;)*&var_1.&i ) 
 	%end;)
 	;
-	OUTPUT OUT=coucou 
+	OUTPUT OUT=sortie_nlin
 	R=residus ;
 RUN;
 %mend;
 
 
-%macro regression_exp_2(var_1,var_2,var_3,a,var_4,var_5,b);
-DATA table ;
-SET table;
-IF &var_1.1=. THEN DELETE;
-IF taux=. THEN DELETE;
-RUN ;
-
-
-PROC NLIN data=table OUTEST=parametres method=newton maxiter=500; /* cac 40 :c=0.1 beta=-0.01 theta1=1 theta2=-0.01*/
-parameters c=0.1 
-
-
-/* pour cac 40 dow jones et change
-beta&var_1=-0.001 theta1&var_1=0.1 theta2&var_1=-0.02
-beta&var_2=-0.001 theta1&var_2=0.1 theta2&var_2=-0.02
-beta&var_3=-0.001 theta1&var_3=0.1 theta2&var_3=-0.02*/
-
-beta&var_1=0.5817387481 theta1&var_1=0.0462998019 theta2&var_1=-0.00012202 /*-0.01 0.05 0.0005*/ /*beta&var_1=-0.01 theta1&var_1=0.5 theta2&var_1=-0.002*/
-beta&var_2=0.0000833209 theta1&var_2=0.06 theta2&var_2=-0.000179968 /*beta -0.01 theta1=0.06*/
-beta&var_3=-0.00001 theta1&var_3=0.01 theta2&var_3=-0.0002  /*beta= 0.001 theta1=0.01 theta1=-0.0002*/
-
-	%do k=1 %to &b;
-		um&k = 0.0001
-	%end;
-%do k=1 %to &b;
-		deltaum&k =0.00001
-	%end;
-;
-
-MODEL taux = c /*+ um1*climat1+um2*climat2+ um3*climat3+um4*climat4+ um5*climat5+um6*climat6+*/
-/*première boucle correspondant à la variable mensuelle*/
-	%DO i=1 %TO &b;
-	+ um&i*&var_4&i + deltaum&i*&var_5&i
-	%END;
- /*Seconde boucle correspondant à la variable hf*/
-
-+ beta&var_1/(0 %do i=1 %to &a; 		
-		+ exp(theta1&var_1*&i+ theta2&var_1*&i**2) %end;)*
-(%do i=1 %to &a; 		
-		+ (exp(theta1&var_1*&i+ theta2&var_1*&i**2)*&var_1.&i ) 
-	%end;)
-+ beta&var_2/(0 %do i=1 %to &a; 		
-		+ exp(theta1&var_2*&i+ theta2&var_2*&i**2) %end;)*
-(%do i=1 %to &a; 		
-		+ (exp(theta1&var_2*&i+ theta2&var_2*&i**2)*&var_2.&i ) 
-	%end;)
-+ beta&var_3/(0 %do i=1 %to &a; 		
-		+ exp(theta1&var_3*&i+ theta2&var_3*&i**2) %end;)*
-(%do i=1 %to &a; 		
-		+ (exp(theta1&var_3*&i+ theta2&var_3*&i**2)*&var_3.&i ) 
-	%end;)
-	;
-RUN;
-%mend;
 
 
 %macro calcul_coefficients_exponentiel(var,a,t,graph);
+/*macro qui calcule la courbe des coefficints d'un modèle MIDAS avec une contrainte exponentielle sur la variable "var"
+
+var : nom de la variable qui subit la contrainte exponentielle
+a : nombre de retards de la variable a pris en compte
+t : degré du polynôme situé à l'intérieur de l'exponentielle*/
+
+
 /*les coefficients estimés sont conservés dans la table parametres*/
 /*js'isolèe les valeurs qui m'intéresssent dans la table parametres*/
-/*
-%LET for=0;
-%LET a=350 ;
-%LET var=cac;
-%LET t=2;
-%LET d=10;
-*/
 
 PROC SQL ;
 select distinct max(_ITER_) into :ligne_max from parametres;
@@ -1200,10 +1164,9 @@ num=_n_;
 RUN;
 
 
+/*exportation de la courbe des coefficients*/
 
-
-ODS RTF FILE="C:\Users\frerots\Dropbox\Etudes\ENSAE\Kappa\GT\sorties\coefficients&t&b&var._almon_exp.rtf";
-/*ODS RTF FILE="\\paradis\eleves\GDe.Franchis\Bureau\3A\GT\donnees\resultats\coefficients_almon_exp.rtf";*/
+ODS RTF FILE="&destination\coefficients&t&b&var._almon_exp.rtf";
 TITLE "Coefficients almon exponentiel, horizon &var avec &a retards";
 PROC GPLOT data=coefficients_hf&var ;
 PLOT col1*num;
@@ -1223,7 +1186,23 @@ ODS RTF CLOSE ;
 
 
 
-%macro prevision_exponentiel(var_1,a,t,var_2,for,annee,trimestre,adl);
+%macro prevision_exponentiel(var_1,a,t,var_2,for,annee,trimestre);
+/*macro qui calcule la valeur prévue du PIB à partir de l'estimation d'un modèle MIDAS exponentiel de degré "t" pour var_1, non contraint pour var_2*/
+
+/*var_1 : nom de la variable haute fréquence (contrainte)*/
+/*a : nombre de retards de la variable haute fréquence retenus*/
+/*t : degré du polynnôme incorporé dans l'exponentielle correspondant à var_1
+/*taux_1 : s'il faut calculer les différences premières pour var_1 mettre 1 ; 0 sinon*/
+/*var_2 : nom de la variable moyenne fréquence (non contrainte)*/
+/*b : nombre de retards de la variable moyenne fréquence retenus*/
+/*taux_2 : s'il faut calculer les différences premières pour var_2 mettre 1 ; 0 sinon*/
+/*for : horizon de prévision : si for =1 on se situe à la fin du mois 2 pour prévoir le mois3. Si for =2, on se situe à la fin du mois 1*/
+/*annee : année de la dernière valeur d'estimation souhaitée*/
+
+
+
+
+
 /*je récupère les coefficients des variables mensuelles*/
 
 PROC SQL ;
@@ -1305,13 +1284,16 @@ WHERE date=yyq(%EVAL(&annee+1),1);
 RUN ;
 %END;
 
-/*je retire la valeur correspondant au premier retard du pib, dans le cas où adl vaut 0*/
-%IF &adl=0 %THEN %DO ;
+
+/*je retire la valeur correspondant au premier retard du pib*/
 DATA valeurs ;
 SET valeurs;
 DROP ret1;
 RUN;
-%END;
+
+
+
+
 %transpose(valeurs);
 %PUT produit matriciel;
 %produit_matriciel(coefficients,valeurs);
@@ -1336,17 +1318,20 @@ RUN;
 
 
 
-%macro rmsfe_almon_exp(var_1,a,t,taux_1,var_2,b,taux_2,for,annee,trim,adl);
+%macro rmsfe_almon_exp(var_1,a,t,taux_1,var_2,b,taux_2,for,annee,trim);
+
+/*macro qui calcule le RMSFE d'un modèle MIDAS à deux variables, l'une non contrainte (var_2), et l'autre contrainte par une exponentielle (var_1)
+/*var_1 : nom de la variable haute fréquence (contrainte)*/
 /*a : nombre de retards de la variable haute fréquence retenus*/
+/*t : degré du polynnôme de contraintes incorporé dans l'exponentielle
+/*taux_1 : s'il faut calculer les différences premières pour var_1 mettre 1 ; 0 sinon*/
+/*var_2 : nom de la variable moyenne fréquence*/
 /*b : nombre de retards de la variable moyenne fréquence retenus*/
-/*var_1 : nom de la variable haute fréquence*/
-/*taux_1 : s'il faut calculer un taux pour var_1 mettre 1 ; 0 sinon*/
-/*var_2 : nom de la variable haute fréquence*/
-/*taux_2 : s'il faut calculer un taux pour var_2 mettre 1 ; 0 sinon*/
-/*for : horizon de prévision : si for =1 on se situe à la fin du mois2 pour prévoir le mois3. */
+/*taux_2 : s'il faut calculer les différences premières pour var_2 mettre 1 ; 0 sinon*/
+/*for : nombre de mois séparant la fin de la période d'estimation de la fin du trimestre.
+for = 1 signifie qu'on prévoit le mois 3 à la fin du mois 2.
 /*annee : année de la dernière valeur d'estimation souhaitée*/
 /*trim : trimestre de la dernière valeur d'estimation souhaitée*/
-
 
 
 DATA res.prevision;
@@ -1389,7 +1374,7 @@ RUN;
 %calcul_coefficients_exponentiel(&var_1,&a,&t,0)
 
 %PUT calcul prevision  ;
-%prevision_exponentiel(&var_1,&a,&t,&var_2,&for,&annee,&trimestre,&adl);
+%prevision_exponentiel(&var_1,&a,&t,&var_2,&for,&annee,&trimestre);
 
 DATA res.prevision ;
 SET res.prevision prevision_prov;
@@ -1419,536 +1404,123 @@ RUN;
 
 
 
-%macro rmsfe_umidas_polynomial_2(var_1,taux_1,var_2,taux_2,var_3,taux_3,a,t,var_4,taux_4,b,for,adl);
-
-DATA res.prevision;
-    DELETE ;
-run;
 
 
+%macro bic_polynomial(var_1,a,t,taux_1,var_2,b,taux_2,for,adl,annee,trim);
 
+/*macro qui calcule le BIC et l'AIC de tous les modèles MIDAs à deux variable dont l'une (var_1) est contrainte par un polynôme et l'autre non
+/*var_1 : nom de la variable haute fréquence (contrainte)*/
+/*a : nombre de retards maximum de la variable haute fréquence retenus*/
+/*t : degré du polynnôme de contraintes incorporé dans l'exponentielle
+/*taux_1 : s'il faut calculer les différences premières pour var_1 mettre 1 ; 0 sinon*/
+/*var_2 : nom de la variable moyenne fréquence*/
+/*b : nombre de retards de la variable moyenne fréquence retenus*/
+/*taux_2 : s'il faut calculer les différences premières pour var_2 mettre 1 ; 0 sinon*/
+/*for : nombre de mois séparant la fin de la période d'estimation de la fin du trimestre.
+for = 1 signifie qu'on prévoit le mois 3 à la fin du mois 2.
+/*annee : année de la dernière valeur d'estimation souhaitée*/
+/*trim : trimestre de la dernière valeur d'estimation souhaitée*/
 %chargeur_1
 
-data donnees;
-SET donnees;
-climat2=climat;
-run;
 
+%DO horizon=2 %TO &for ;
 
-
+/*préparation des données moyenne fréquence et ajout de celles-ci à la table*/
 %PUT module mf ;
-%module(&b,&var_4,&taux_4,&for);
+%module(&b,&var_2,&taux_2,&for);
 
+/*préparation des données haute fréquence et ajout de celles-ci à la table*/
 %PUT module hf ;
 %module(&a,&var_1,&taux_1,&for);
 
-%PUT module hf ;
-%module(&a,&var_2,&taux_2,&for);
 
-%PUT module hf ;
-%module(&a,&var_3,&taux_3,&for);
 
-%PUT ajout hf ;
-%ajout_polynomial(&a,&t,&var_1,&for)
+/*je fais varier le nombre de jours de retards :
+la macro calculera l'aic et le bic pour tous les modèles ayant entre 70 et a retards*/
+%DO jours=70 %TO &a ;
 
-%PUT ajout hf ;
-%ajout_polynomial(&a,&t,&var_2,&for)
 
-%PUT ajout hf ;
-%ajout_polynomial(&a,&t,&var_3,&for)
+/*je fais varier le degré du polynôme de contraintes
+la macro calculera l'aic et le bic pour tous les modèles contraint par des molynôme de degré 2 jusqu'à t*/
+%DO parametres=2 %TO &t ;
 
-%DO annee=2000 %TO 2012;
-%DO trimestre=1 %TO 4;
 
-%PUT dates table ;
-DATA table;
-SET bibli.table;
-WHERE date<=yyq(&annee,&trimestre);
+DATA table ;
+SET bibli.table_2;
 RUN;
 
+/*modification des données haute fréquence de la table du fait de la forme polynomiale des coefficients*/
+%PUT ajout hf ;
+%ajout_polynomial(&jours,&parametres,&var_1,&horizon)
+
+
+/*je fais varier le nombre de retards de la variable non contrainte
+la macro calculera l'aic et le bic pour tous les modèles ayant entre 5 et b mois de retards*/
+%DO mois=5 %TO &b ;
+
+
+
+/*Elimination des lignes correspondant à une date posétieure à celle choisie*/
+%PUT dates table ;
+DATA table;
+SET table;
+WHERE date<=yyq(2012,2);
+RUN;
+
+
+/*regression*/
 %PUT regression  ;
-PROC REG DATA=table OUTEST=parametres ;
-MODEL taux=&var_1.1-&var_1.%EVAL(&t+1) &var_2.1-&var_2.%EVAL(&t+1) &var_3.1-&var_3.%EVAL(&t+1) &var_4.1-&var_4.&b ;
+/*Si adl vaut 0 cela signifie qu'un retard du PIB n'est pas bienvenu*/
+%IF &adl=0 %THEN %DO ;
+PROC REG DATA=table OUTEST=resultats ;
+MODEL taux= &var_1.1-&var_1.%EVAL(&parametres+1) &var_2.1-&var_2.&mois / AIC BIC ;
 OUTPUT out=fit
 	p=yhat ;
 RUN;
 QUIT;
+%END ;
 
-
-
-
-%PUT calcul coefficients;
-%calcul_coefficients_polynomial(&var_1,&t,&a,0);
-
-%PUT calcul coefficients;
-%calcul_coefficients_polynomial(&var_2,&t,&a,0);
-
-%PUT calcul coefficients;
-%calcul_coefficients_polynomial(&var_3,&t,&a,0);
-
-%PUT calcul prevision;
-%prevision_polynomial_2(&var_1,&var_2,&var_3,&a,&t,&var_4,&b,&for,&annee,&trimestre,&adl);
-
-
-DATA res.prevision ;
-SET res.prevision prevision_prov;
+/*Si adl vaut autre chose que 0 (1) cela signifie qu'un retard du PIB est demandé dans l'estimation du modèle*/
+%ELSE %DO ;
+PROC REG DATA=table OUTEST=resultats ;
+MODEL taux=ret1 &var_1.1-&var_1.%EVAL(&parametres+1) &var_2.1-&var_2.&mois / AIC BIC ;
+OUTPUT out=fit
+	p=yhat ;
 RUN;
-
-
-%PUT itération &annee Q &trimestre/4 ;
-
-%END;
-%END;
-
-
-DATA res.prevision ;
-SET res.prevision ;
-KEEP col1 date ;
-IF col1=. THEN DELETE ; 
-RUN;
-
-
-
-%LET nom=polynomial_4_variables;
-%LET titre="Réalité vs prevision, midas polynomial (change, cac 40 spread tmp-pibor, climat des affaires, delta climat des affaires)";
-
-%grapheur
-
-
-%mend;
-
-
-
-
-
-
-
-
-
-%macro almon_exp_2(var_1,a1,taux_1,var_2,a2,taux_2,var_3,a3,taux_3,var_4,a4,taux_4,var_5,a5,taux_5,for,annee,trim);
-
-
-/*a : nombre de retards de la variable haute fréquence retenus*/
-/*g : fréquence de la variable haute fréquence (63 pour une variable journalière)*/
-/*b : nombre de retards de la variable moyenne fréquence retenus*/
-/*h : fréquence de la variable moyenne fréquence (3 pour une variable mensuelle)*/
-/*var_1 : nom de la variable haute fréquence*/
-/*taux_1 : s'il faut calculer un taux pour var_1 mettre 1 ; 0 sinon*/
-/*var_2 : nom de la variable haute fréquence*/
-/*taux_2 : s'il faut calculer un taux pour var_2 mettre 1 ; 0 sinon*/
-/*for : horizon de prévision : si for =1 on se situe à la fin du mois2 pour prévoir le mois3. */
-/*annee : année de la dernière valeur d'estimation souhaitée*/
-/*trim : trimestre de la dernière valeur d'estimation souhaitée*/
-
-
-
-/*Je charge les donnees*/
-%chargeur_1
-
-data donnees;
-SET donnees;
-climat2=climat;
-run;
-
-
-/*préparation des données haute fréquence et ajout de celles-ci à la table*/
-%PUT module hf &2 ;
-%module(&a1,&var_1,&taux_1,&for);
-
-%PUT module hf &2 ;
-%module(&a2,&var_2,&taux_2,&for);
-
-%PUT module hf &3 ;
-%module(&a3,&var_3,&taux_3,&for);
-
-/*préparation des données haute fréquence et ajout de celles-ci à la table*/
-%PUT module mf &i ;
-%module(&a4,&var_4,&taux_4,&for);
-
-%PUT module mf &i ;
-%module(&a5,&var_5,&taux_5,&for);
-
-
-
-
-/*Elimination des lignes correspondant à une date posétieure à celle choisie*/
-%PUT dates table ;
-DATA table;
-SET table;
-WHERE date<yyq(&annee,&trim);
-RUN;
-
-
-%regression_exp_2(&var_1,&var_2,&var_3,&a,&var_4,&var_5,&b)
-%calcul_coefficients_exponentiel(&var_1,&a,1)
-%calcul_coefficients_exponentiel(&var_2,&a,1)
-%calcul_coefficients_exponentiel(&var_3,&a,1)
-
-
-
-
-%MEND;
-
-
-
-
-
-
-
-%macro prevision_polynomial_2(var_1,var_2,var_3,a,t,var_4,b,for,annee,trimestre,adl);
-
-/*je rassemble dans une même table les coefficients estimés et ceux reconstitués. */
-
-/*de la table parametres fournie par la proc reg, je ne garde que les estimations correspondant à la variable mensuelle*/
-DATA coefficients;
-SET parametres;
-DROP _MODEL_ _DEPVAR_ _TYPE_ _RMSE_ taux &var_1.1-&var_1.%EVAL(&t+1) &var_2.1-&var_2.%EVAL(&t+1) &var_3.1-&var_3.%EVAL(&t+1);
-RUN;
-
-
-
-
-/*je rassemble tous les coefficients dans la table coefficients*/
-DATA coefficients;
-MERGE coefficients coefficients_hf&var_1 ;
-RUN;
-
-DATA coefficients;
-MERGE coefficients coefficients_hf&var_2 ;
-RUN;
-
-DATA coefficients;
-MERGE coefficients coefficients_hf&var_3 ;
-RUN;
-
-
-/*j'isole maintenant la valeur des regresseurs correposndant à la date immédiatement successive à celle de la fin de lapériode d'estimation*/
-/*J'isole aussi la date de prévision, pour ensuite l'accoler à la valeur prévue*/
-/*Si on est au trimestre 1,2,3, il suffit de prendre la valeur correspondant au trimestre suivant*/
-%IF &trimestre<4 %THEN %DO ;
-DATA valeurs;
-SET bibli.table_2;
-DROP date taux date_obs;
-WHERE date=yyq(&annee,%EVAL(&trimestre+1));
-RUN;
-
-DATA date ;
-SET bibli.table ;
-KEEP date ;
-WHERE date=yyq(&annee,%EVAL(&trimestre+1));
-RUN ;
-%END;
-
-/*si on est au trimestre 4, il faut prendre la valeur du premier trimestre de l'année suivante*/
-%IF &trimestre=4 %THEN %DO ;
-DATA valeurs;
-SET bibli.table_2;
-DROP date taux date_obs ;
-WHERE date=yyq(%EVAL(&annee+1),1);
-RUN;
-
-DATA date ;
-SET bibli.table ;
-KEEP date ;
-WHERE date=yyq(%EVAL(&annee+1),1);
-RUN ;
-%END;
-
-/*je retire la valeur correspondant au premier retard du pib, dans le cas où adl vaut 0*/
-%IF &adl=0 %THEN %DO ;
-DATA valeurs ;
-SET valeurs;
-DROP ret1;
-RUN;
-%END;
-%transpose(valeurs);
-
-%produit_matriciel(coefficients,valeurs);
-
-/*le résultat de ce produit matriciel se trouve dans une table nommée produit (cf macro produit_matriciel)*/
-
-/*j'exporte la prévision dans la table prévision_prov*/
-DATA prevision_prov;
-SET produit ;
-RUN ;
-
-
-/*j'ajoute la date à prevision_prov*/
-DATA prevision_prov ;
-MERGE prevision_prov date;
-RUN;
-%mend;
-
-
-
-
-
-
-%macro prevision_exponentiel_2(var_1,var_2,var_3,a,var_4,var_5,for,mickey,donald,adl);
-/*je récupère les coefficients des variables mensuelles*/
-
-DATA bibli.table_2 ;
-SET bibli.table_2;
-DROP tmp_pibor;
-RUN;
-
-
-
-PROC SQL ;
-select distinct max(_ITER_) into :ligne_max from parametres;
 QUIT;
+%END ;
 
-%PUT &ligne_max;
 
-/*de la table parametres fournie par la proc reg, je ne garde que les estimations correspondant aux variables mensuelles*/
-DATA coefficients;
-SET parametres;
-DROP _TYPE_ _STATUS_ _NAME_ _ITER_ _SSE_ c beta&var_1 theta1&var_1 theta2&var_1 beta&var_2 theta1&var_2 theta2&var_2 beta&var_3 theta1&var_3 theta2&var_3;
-WHERE _iter_ =&ligne_max ;
-RUN;
 
-/*j'isole la constante*/
-DATA constante;
-SET parametres;
-KEEP c ;
-WHERE _iter_ =&ligne_max ;
+
+DATA resultats ;
+SET resultats ;
+jours=&jours ;
+mois=&mois;
+parametres=&parametres;
+horizon=&horizon;
 RUN;
 
 
-DATA coefficients_hf&var_3;
-SET coefficients_hf&var_3;
-DROP num;
+DATA res.resultats&var_1 ;
+SET res.resultats&var_1 resultats ;
 RUN;
 
-DATA coefficients_hf&var_2;
-SET coefficients_hf&var_2;
-DROP num;
-RUN;
+%PUT iteration &var_1 &jours/&a &parametres/&t &mois/&b ;
 
-
-DATA coefficients_hf&var_1;
-SET coefficients_hf&var_1;
-DROP num;
-RUN;
-
-%transpose(coefficients_hf&var_3)
-DATA coefficients_hf&var_3;
-SET coefficients_hf&var_3;
-%DO i=1 %TO &a;
-RENAME col&i=&var_3.&i;
-%END;
-RUN;
-
-%transpose(coefficients_hf&var_2)
-DATA coefficients_hf&var_2;
-SET coefficients_hf&var_2;
-%DO i=1 %TO &a;
-RENAME col&i=&var_2.&i;
-%END;
-RUN;
-
-%transpose(coefficients_hf&var_1)
-DATA coefficients_hf&var_1;
-SET coefficients_hf&var_1;
-%DO i=1 %TO &a;
-RENAME col&i=&var_1.&i;
-%END;
-RUN;
-
-
-
-/*je rassemble tous les coefficients dans la table coefficients
-Cette table comportera, dans l'ordre : la cosntante, les coefficients reconstitués correspondant à la première variable finanière
-puis ceux de la seconde, puis les coefficients des variables mensuelles*/
-
-DATA coefficients;
-MERGE coefficients_hf&var_3 coefficients  ;
-RUN;
-
-DATA coefficients;
-MERGE coefficients_hf&var_2 coefficients  ;
-RUN;
-
-DATA coefficients;
-MERGE coefficients_hf&var_1 coefficients  ;
-RUN;
-
-DATA coefficients;
-MERGE constante coefficients  ;
-RUN;
-
-
-/*j'isole maintenant la valeur des regresseurs correposndant à la date immédiatement successive à celle de la fin de lapériode d'estimation*/
-/*J'isole aussi la date de prévision, pour ensuite l'accoler à la valeur prévue*/
-/*Si on est au trimestre 1,2,3, il suffit de prendre la valeur correspondant au trimestre suivant*/
-%IF &donald<4 %THEN %DO ;
-DATA valeurs;
-SET bibli.table_2;
-DROP date taux date_obs;
-WHERE date=yyq(&mickey,%EVAL(&donald+1));
-RUN;
-
-DATA date ;
-SET bibli.table ;
-KEEP date ;
-WHERE date=yyq(&mickey,%EVAL(&donald+1));
-RUN ;
-%END;
-
-/*si on est au trimestre 4, il faut prendre la valeur du premier trimestre de l'année suivante*/
-%IF &donald=4 %THEN %DO ;
-DATA valeurs;
-SET bibli.table_2;
-DROP date taux date_obs ;
-WHERE date=yyq(%EVAL(&mickey+1),1);
-RUN;
-
-DATA date ;
-SET bibli.table ;
-KEEP date ;
-WHERE date=yyq(%EVAL(&mickey+1),1);
-RUN ;
-%END;
-
-/*je retire la valeur correspondant au premier retard du pib, dans le cas où adl vaut 0*/
-%IF &adl=0 %THEN %DO ;
-DATA valeurs ;
-SET valeurs;
-DROP ret1;
-RUN;
-%END;
-%transpose(valeurs);
-
-%produit_matriciel(coefficients,valeurs);
-
-/*le résultat de ce produit matriciel se trouve dans une table nommée produit (cf macro produit_matriciel)*/
-
-/*j'exporte la prévision dans la table prévision_prov*/
-DATA prevision_prov;
-SET produit ;
-RUN ;
-
-
-/*j'ajoute la date à prevision_prov*/
-DATA prevision_prov ;
-MERGE prevision_prov date;
-RUN;
-%mend;
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-/*
-%almon_exp_2(tmp_pibor,450,1,cac_40,450,1,change,450,1,climat,6,0,climat2,6,1,2,2012,2);
-*/
-
-
-
-/*
-%regression_exp(tmp_pibor,cac_40,change,450,climat,climat2,6);
-%calcul_coefficients_exponentiel(tmp_pibor,450,1);
-%calcul_coefficients_exponentiel(cac_40,450,1);
-%calcul_coefficients_exponentiel(change,450,1);
-%prevision_exponentiel_2(tmp_pibor,cac_40,change,450,climat,climat2,2,2000,1,0)
-*/
-%macro rmsfe_umidas_exp_2(var_1,taux_1,var_2,taux_2,var_3,taux_3,a,var_4,taux_4,var_5,taux_5,b,for,adl);
-
-DATA res.prevision;
-    DELETE ;
-run;
-
-
-/*Je charge les donnees*/
-%chargeur_1
-
-data donnees;
-SET donnees;
-climat2=0;
-run;
-
-
-/*préparation des données haute fréquence et ajout de celles-ci à la table*/
-%PUT module hf &2 ;
-%module(&a,&var_1,&taux_1,&for);
-
-%PUT module hf &2 ;
-%module(&a,&var_2,&taux_2,&for);
-
-%PUT module hf &3 ;
-%module(&a,&var_3,&taux_3,&for);
-
-/*préparation des données haute fréquence et ajout de celles-ci à la table*/
-%PUT module mf &i ;
-%module(&b,&var_4,&taux_4,&for);
-
-%PUT module mf &i ;
-%module(&b,&var_5,&taux_5,&for);
-
-
-%DO annee=2004 %TO 2012;
-%DO trimestre=1 %TO 4;
-
-/*Elimination des lignes correspondant à une date posétieure à celle choisie*/
-%PUT dates table ;
-DATA table;
-SET bibli.table_2;
-WHERE date<yyq(&annee,&trimestre);
-RUN;
-
-DATA table;
-SET table;
-IF cac_401=. THEN DELETE;
-RUN;
-
-
-
-
-%regression_exp_2(&var_1,&var_2,&var_3,&a,&var_4,&var_5,&b)
-%calcul_coefficients_exponentiel(&var_1,&a,1)
-%calcul_coefficients_exponentiel(&var_2,&a,1)
-%calcul_coefficients_exponentiel(&var_3,&a,1)
-
-
-
-%PUT calcul prevision;
-%prevision_exponentiel_2(&var_1,&var_2,&var_3,&a,&var_4,&var_5,2,&annee,&trimestre,0)
-
-DATA res.prevision ;
-SET res.prevision prevision_prov;
-RUN;
-
-
-%PUT itération &annee Q &trimestre/4;
-
+%END ;
 %END;
 %END;
+%END;
+ 
 
 
-DATA res.prevision ;
-SET res.prevision ;
-KEEP col1 date ;
-IF col1=. THEN DELETE ;
-RUN;
 
-%LET nom=exponentiel_5_variables;
-%LET titre="Réalité vs prevision, midas exponentiel (change, cac 40 spread tmp-pibor, climat des affaires, delta climat des affaires)";
-
-
-%grapheur
+PROC EXPORT data=res.resultats&var_1
+   outfile='destination\&var_1.bic.csv'
+   dbms=csv
+ 	replace;
+ RUN;
 
 
 %mend;
-
-
